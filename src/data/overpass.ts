@@ -2,7 +2,7 @@ import type { AddressPreset, Bounds, RoadData, RoadGraphEdge, RoadGraphNode, Sea
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
-const ADDRESS_PRESETS_URL = '/addresses.txt'
+const ADDRESS_PRESETS_URL = `${import.meta.env.BASE_URL}addresses.txt`
 const PLAYABLE_HIGHWAYS = new Set([
   'residential',
   'living_street',
