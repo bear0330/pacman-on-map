@@ -3,6 +3,8 @@
 🟡 A tribute remake inspired by **Ms. PAC-Maps**, Google's April Fools' Pac-Man on Google Maps.  
 I built this project for my 5-year-old son to enjoy.
 
+🎮 Play it here: **https://bear0330.github.io/pacman-on-map/**
+
 This project turns real streets into a playable Pac-Man board. Pick a neighborhood, generate a road maze, and play directly on top of the map.
 
 My son recently got into Pac-Man, spotted the old Google Maps version on YouTube, and asked me to find it for him. I found out it was a 2015 April Fools' thing and no longer playable, so I made this to give him something close enough to enjoy.
