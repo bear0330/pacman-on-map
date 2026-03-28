@@ -5,6 +5,10 @@ I built this project for my 5-year-old son to enjoy.
 
 This project turns real streets into a playable Pac-Man board. Pick a neighborhood, generate a road maze, and play directly on top of the map.
 
+My son recently got into Pac-Man, spotted the old Google Maps version on YouTube, and asked me to find it for him. I found out it was a 2015 April Fools' thing and no longer playable, so I made this to give him something close enough to enjoy.
+
+This whole project was basically vibed into existence. I did not treat it like a serious production system. I am a senior engineer, but this one was mainly for fun, for my kid, and because the idea was too charming to ignore. It is not perfect, and I was not obsessing over every engineering detail. Still, it works, it made him happy, and that was the point.
+
 ## What It Does
 
 - 🗺️ Generates a playable Pac-Man layout from real road data
@@ -74,17 +78,6 @@ Label|Search Query
 Label|lat|lng
 ```
 
-## Project Structure
-
-```text
-src/data        Overpass, Nominatim, preset loading
-src/generator   Road-to-maze generation
-src/game        Pac-Man rules, ghosts, collisions, scoring
-src/render      Canvas overlay rendering
-src/map         MapLibre setup and viewport control
-src/i18n.ts     UI translations
-```
-
 ## Testing
 
 ```bash
@@ -98,5 +91,6 @@ Current tests cover road clipping, map generation, collisions, scoring chains, a
 - This is a fan-made tribute project.
 - It is not affiliated with or endorsed by Google, Namco, or Bandai Namco.
 - The project avoids bundling original Pac-Man commercial assets.
+- If you want to fork it and improve it, please do. Just do not come in expecting polished enterprise-grade code from every corner of the repo.
 
 If this little remake makes one kid smile on a random street corner somewhere in the world, it did its job.
