@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/pacman-on-map/' : '/',
   server: {
     port: 5173,
   },
@@ -8,4 +9,4 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.test.ts'],
   },
-})
+}))
