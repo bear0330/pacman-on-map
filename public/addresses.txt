@@ -1,0 +1,12 @@
+# One preset per line.
+# Supported formats:
+# label
+# label|query
+# label|lat|lng
+
+Shibuya Crossing|Shibuya Crossing, Tokyo, Japan
+Asakusa Streets|Asakusa, Tokyo, Japan
+Le Marais, Paris|Le Marais, Paris, France
+Latin Quarter, Paris|Latin Quarter, Paris, France
+Times Square, New York|Times Square, Manhattan, New York, USA
+Author's Hometown|台灣新北市新莊區迴龍 中正路
