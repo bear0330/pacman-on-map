@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+public/addresses.txt
+2026-03-28_16-39.png
 
 # Editor directories and files
 .vscode/*
