@@ -98,10 +98,18 @@ describe('GameEngine portals', () => {
     engine.state.ghosts[0].mode = 'frightened'
     engine.state.ghosts[0].position = { lng: 0.45, lat: 0.55 }
     engine.state.ghosts[0].currentNodeId = null
+    engine.state.ghosts[0].travel = {
+      edgeId: 'ghost-a-mid',
+      fromNodeId: 'ghost-a',
+      toNodeId: 'mid',
+      progress: 0.4,
+    }
     resolveNow(engine, performance.now() + 100)
 
     expect(engine.state.score).toBe(200)
     expect(engine.state.floatingScores.at(-1)?.text).toBe('200')
+    expect(engine.state.ghosts[0].mode).toBe('eyes')
+    expect(engine.state.ghosts[0].travel).not.toBeNull()
 
     engine.state.pacman.position = { lng: 0.55, lat: 0.55 }
     engine.state.ghosts[1].mode = 'frightened'
@@ -174,6 +182,33 @@ describe('GameEngine portals', () => {
     expect(engine.state.lives).toBe(2)
   })
 
+  it('reverses pacman immediately when the opposite direction is pressed mid-edge', () => {
+    const engine = new GameEngine(roadMap)
+    engine.state.status = 'playing'
+    engine.state.pacman.currentNodeId = null
+    engine.state.pacman.direction = 'right'
+    engine.state.pacman.pendingDirection = 'right'
+    engine.state.pacman.travel = {
+      edgeId: 'mid-east',
+      fromNodeId: 'mid',
+      toNodeId: 'east',
+      progress: 0.25,
+    }
+    engine.state.pacman.position = { lng: 0.6225, lat: 0.5 }
+
+    engine.setDirection('left')
+
+    expect(engine.state.pacman.direction).toBe('left')
+    expect(engine.state.pacman.pendingDirection).toBe('left')
+    expect(engine.state.pacman.travel).toEqual({
+      edgeId: 'mid-east',
+      fromNodeId: 'east',
+      toNodeId: 'mid',
+      progress: 0.75,
+    })
+    expect(engine.state.pacman.position).toEqual({ lng: 0.6225, lat: 0.5 })
+  })
+
   it('wins when the final pellet is collected', () => {
     const clearMap: PlayableMap = {
       bounds: {
@@ -217,5 +252,75 @@ describe('GameEngine portals', () => {
 
     expect(engine.state.remainingPellets).toBe(0)
     expect(engine.state.status).toBe('win')
+  })
+
+  it('spawns a bonus fruit after enough pellets have been eaten', () => {
+    const engine = new GameEngine(roadMap)
+    const anyEngine = engine as any
+    anyEngine.totalPelletsAtLevelStart = 10
+    anyEngine.fruitTriggerIndex = 0
+    engine.state.remainingPellets = 7
+    engine.state.bonusFruit = null
+
+    anyEngine.maybeSpawnBonusFruitFromProgress(performance.now() + 100)
+
+    expect(engine.state.bonusFruit).not.toBeNull()
+  })
+
+  it('awards one extra life when the score reaches 10000', () => {
+    const engine = new GameEngine(roadMap)
+    const anyEngine = engine as any
+    engine.state.score = 10_050
+    engine.state.lives = 3
+
+    anyEngine.awardExtraLifeIfEligible()
+    expect(engine.state.lives).toBe(4)
+
+    anyEngine.awardExtraLifeIfEligible()
+    expect(engine.state.lives).toBe(4)
+  })
+
+  it('turns eyes back into a normal ghost after reaching home', () => {
+    const engine = new GameEngine(roadMap)
+    engine.state.status = 'playing'
+    const ghost = engine.state.ghosts[0]
+    ghost.mode = 'eyes'
+    ghost.currentNodeId = ghost.homeNodeId
+    ghost.travel = null
+
+    engine.tick(performance.now() + 100)
+
+    expect(engine.state.ghosts[0].mode).toBe('chase')
+  })
+
+  it('lets eyes ghosts path home even if recent memory would normally block that turn', () => {
+    const eyesMap: PlayableMap = {
+      ...roadMap,
+      nodes: [
+        { id: 'west', lng: 0.2, lat: 0.5, neighbors: ['mid'] },
+        { id: 'mid', lng: 0.5, lat: 0.5, neighbors: ['west', 'ghost-a'] },
+        { id: 'ghost-a', lng: 0.7, lat: 0.5, neighbors: ['mid'] },
+        { id: 'ghost-b', lng: 0.55, lat: 0.55, neighbors: [] },
+        { id: 'ghost-c', lng: 0.45, lat: 0.45, neighbors: [] },
+        { id: 'ghost-d', lng: 0.55, lat: 0.45, neighbors: [] },
+      ],
+      edges: [
+        { id: 'mid-west', from: 'mid', to: 'west', kind: 'road', length: 20 },
+        { id: 'ghost-a-mid', from: 'ghost-a', to: 'mid', kind: 'road', length: 20 },
+      ],
+      spawnNodeId: 'west',
+      ghostHomeNodeIds: ['ghost-a', 'ghost-b', 'ghost-c', 'ghost-d'],
+    }
+    const engine = new GameEngine(eyesMap)
+    const ghost = engine.state.ghosts[0]
+    ghost.mode = 'eyes'
+    ghost.currentNodeId = 'mid'
+    ghost.homeNodeId = 'ghost-a'
+    ghost.lastNodeId = 'east'
+    ghost.recentNodeIds = ['ghost-a', 'ghost-b', 'ghost-c', 'ghost-d']
+
+    ;(engine as any).chooseGhostEdge(ghost)
+
+    expect(ghost.travel?.toNodeId).toBe('ghost-a')
   })
 })

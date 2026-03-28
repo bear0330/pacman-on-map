@@ -10,6 +10,8 @@ const CONNECTOR_LIMIT = 10
 const PELLET_STEP_METERS = 6
 const MIN_SPAWN_DISTANCE_METERS = 120
 const MIN_POWER_DISTANCE_FROM_SPAWN_METERS = 90
+const MIN_POWER_PELLET_SPACING_METERS = 80
+const TARGET_POWER_PELLETS = 6
 const BLOCKED_EDGE_PROGRESS = 0.35
 const INTERSECTION_CLEARANCE_METERS = 18
 const TURN_CLEARANCE_METERS = 5
@@ -380,6 +382,28 @@ function buildPellets(
         power: true,
       })
     }
+  }
+
+  const extraCandidates = [...pellets]
+    .filter((pellet) =>
+      !usedPellets.has(pellet.id)
+      && (!spawnNode || distanceMeters(pellet, spawnNode) >= MIN_POWER_DISTANCE_FROM_SPAWN_METERS))
+    .sort((a, b) => distanceMeters(b, center) - distanceMeters(a, center))
+
+  for (const candidate of extraCandidates) {
+    if (powerPellets.length >= TARGET_POWER_PELLETS) {
+      break
+    }
+    const farEnough = powerPellets.every((existing) => distanceMeters(existing, candidate) >= MIN_POWER_PELLET_SPACING_METERS)
+    if (!farEnough) {
+      continue
+    }
+    usedPellets.add(candidate.id)
+    powerPellets.push({
+      ...candidate,
+      id: `power:${candidate.id}`,
+      power: true,
+    })
   }
 
   const remainingPellets = pellets.filter((pellet) => !usedPellets.has(pellet.id))

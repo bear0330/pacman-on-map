@@ -1,5 +1,5 @@
 import type { GameEngine } from '../game/gameEngine'
-import type { Direction, GeoPoint, PlayableMap, ScreenPoint, VisualEffect } from '../types'
+import type { BonusFruit, Direction, GeoPoint, PlayableMap, ScreenPoint, VisualEffect } from '../types'
 
 const PACMAN_GLOW_RADIUS = 30
 const PACMAN_BODY_RADIUS = 20
@@ -113,29 +113,28 @@ export class CanvasRenderer {
   private ensurePelletLayer(
     map: PlayableMap,
     pellets: GeoPoint[],
-    powerPellets: GeoPoint[],
     project: (point: GeoPoint) => ScreenPoint,
     ratio: number,
     width: number,
     height: number,
   ): void {
-    const key = `pellets:${pellets.length}:${powerPellets.length}:${this.projectionKey(map, project, width, height)}`
+    const key = `pellets:${pellets.length}:${this.projectionKey(map, project, width, height)}`
     if (this.pelletLayer.key === key) {
       return
     }
     this.pelletLayer.key = key
     this.prepareLayer(this.pelletLayer, ratio, width, height)
     this.drawPellets(this.pelletLayer.context, pellets, project, '#ffe66d', 3)
-    this.drawPellets(this.pelletLayer.context, powerPellets, project, '#ffffff', 6)
   }
 
   public renderPreview(map: PlayableMap, project: (point: GeoPoint) => ScreenPoint): void {
     const { ratio, width, height } = this.resize()
     this.ensureRoadLayer(map, project, ratio, width, height)
-    this.ensurePelletLayer(map, map.pellets, map.powerPellets, project, ratio, width, height)
+    this.ensurePelletLayer(map, map.pellets, project, ratio, width, height)
     this.context.clearRect(0, 0, width, height)
     this.context.drawImage(this.roadLayer.canvas, 0, 0, width, height)
     this.context.drawImage(this.pelletLayer.canvas, 0, 0, width, height)
+    this.drawPowerPellets(map.powerPellets, project)
     this.drawSpawn(map, project)
   }
 
@@ -143,15 +142,23 @@ export class CanvasRenderer {
     const { ratio, width, height } = this.resize()
     const pellets = engine.getPellets()
     this.ensureRoadLayer(engine.map, project, ratio, width, height)
-    this.ensurePelletLayer(engine.map, pellets.pellets, pellets.powerPellets, project, ratio, width, height)
+    this.ensurePelletLayer(engine.map, pellets.pellets, project, ratio, width, height)
     this.context.clearRect(0, 0, width, height)
     this.context.drawImage(this.roadLayer.canvas, 0, 0, width, height)
     this.context.drawImage(this.pelletLayer.canvas, 0, 0, width, height)
+    this.drawPowerPellets(pellets.powerPellets, project)
+    this.drawBonusFruit(engine.getBonusFruit(), project)
     if (engine.state.status !== 'dying') {
       this.drawPacman(engine.state.pacman.position, engine.state.pacman.pendingDirection, project)
     }
     for (const ghost of engine.state.ghosts) {
-      this.drawGhost(ghost.position, ghost.direction, ghost.mode === 'frightened' ? '#6a4c93' : ghost.color, project)
+      this.drawGhost(
+        ghost.position,
+        ghost.direction,
+        ghost.mode === 'frightened' ? '#6a4c93' : ghost.color,
+        ghost.mode,
+        project,
+      )
     }
     this.drawVisualEffects(engine.state.visualEffects, project)
     this.drawFloatingScores(engine.state.floatingScores, project)
@@ -229,7 +236,7 @@ export class CanvasRenderer {
   private drawPacman(point: GeoPoint, direction: Direction, project: (point: GeoPoint) => ScreenPoint): void {
     const screen = project(point)
     const angle = directionAngle(direction)
-    const mouth = 0.38
+    const mouth = 0.16 + ((Math.sin(performance.now() * 0.018) + 1) * 0.18)
     this.context.fillStyle = 'rgba(255, 214, 10, 0.22)'
     this.context.beginPath()
     this.context.arc(screen.x, screen.y, PACMAN_GLOW_RADIUS, 0, Math.PI * 2)
@@ -249,9 +256,135 @@ export class CanvasRenderer {
     this.context.shadowBlur = 0
   }
 
-  private drawGhost(point: GeoPoint, direction: Direction, color: string, project: (point: GeoPoint) => ScreenPoint): void {
+  private drawPowerPellets(points: GeoPoint[], project: (point: GeoPoint) => ScreenPoint): void {
+    const pulse = 0.82 + ((Math.sin(performance.now() * 0.01) + 1) * 0.18)
+    for (const point of points) {
+      const screen = project(point)
+      this.context.save()
+      this.context.fillStyle = 'rgba(255, 255, 255, 0.24)'
+      this.context.beginPath()
+      this.context.arc(screen.x, screen.y, 16 * pulse, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.fillStyle = '#ffe66d'
+      this.context.shadowColor = '#fff3b0'
+      this.context.shadowBlur = 24
+      this.context.beginPath()
+      this.context.arc(screen.x, screen.y, 8 * pulse, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.fillStyle = '#ffffff'
+      this.context.beginPath()
+      this.context.arc(screen.x, screen.y, 4 * pulse, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.restore()
+    }
+  }
+
+  private drawBonusFruit(fruit: BonusFruit | null, project: (point: GeoPoint) => ScreenPoint): void {
+    if (!fruit) {
+      return
+    }
+    const screen = project(fruit)
+    const bob = Math.sin(performance.now() * 0.008) * 3
+    const y = screen.y + bob
+
+    this.context.save()
+    this.context.shadowColor = 'rgba(255, 255, 255, 0.4)'
+    this.context.shadowBlur = 14
+
+    if (fruit.kind === 'cherry') {
+      this.context.strokeStyle = '#2d6a4f'
+      this.context.lineWidth = 2
+      this.context.beginPath()
+      this.context.moveTo(screen.x, y - 10)
+      this.context.quadraticCurveTo(screen.x - 6, y - 18, screen.x - 9, y - 7)
+      this.context.moveTo(screen.x, y - 10)
+      this.context.quadraticCurveTo(screen.x + 6, y - 18, screen.x + 9, y - 7)
+      this.context.stroke()
+      this.context.fillStyle = '#e63946'
+      this.context.beginPath()
+      this.context.arc(screen.x - 7, y, 7, 0, Math.PI * 2)
+      this.context.arc(screen.x + 7, y, 7, 0, Math.PI * 2)
+      this.context.fill()
+    } else if (fruit.kind === 'strawberry') {
+      this.context.fillStyle = '#ef476f'
+      this.context.beginPath()
+      this.context.moveTo(screen.x, y - 12)
+      this.context.quadraticCurveTo(screen.x + 10, y - 5, screen.x + 7, y + 10)
+      this.context.quadraticCurveTo(screen.x, y + 16, screen.x - 7, y + 10)
+      this.context.quadraticCurveTo(screen.x - 10, y - 5, screen.x, y - 12)
+      this.context.fill()
+      this.context.fillStyle = '#90be6d'
+      this.context.beginPath()
+      this.context.moveTo(screen.x, y - 14)
+      this.context.lineTo(screen.x + 8, y - 9)
+      this.context.lineTo(screen.x, y - 6)
+      this.context.lineTo(screen.x - 8, y - 9)
+      this.context.closePath()
+      this.context.fill()
+    } else if (fruit.kind === 'orange') {
+      this.context.fillStyle = '#ff9f1c'
+      this.context.beginPath()
+      this.context.arc(screen.x, y, 10, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.fillStyle = '#2d6a4f'
+      this.context.beginPath()
+      this.context.ellipse(screen.x + 5, y - 10, 5, 3, -0.4, 0, Math.PI * 2)
+      this.context.fill()
+    } else {
+      this.context.fillStyle = '#f94144'
+      this.context.beginPath()
+      this.context.arc(screen.x, y, 10, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.fillStyle = '#90be6d'
+      this.context.beginPath()
+      this.context.moveTo(screen.x - 2, y - 10)
+      this.context.quadraticCurveTo(screen.x, y - 16, screen.x + 2, y - 10)
+      this.context.quadraticCurveTo(screen.x, y - 6, screen.x - 2, y - 10)
+      this.context.fill()
+    }
+
+    this.context.restore()
+  }
+
+  private drawGhost(
+    point: GeoPoint,
+    direction: Direction,
+    color: string,
+    mode: 'chase' | 'frightened' | 'eyes',
+    project: (point: GeoPoint) => ScreenPoint,
+  ): void {
     const screen = project(point)
     const eyeOffset = direction === 'right' ? 2 : direction === 'left' ? -2 : 0
+
+    if (mode === 'eyes') {
+      this.context.save()
+      const trailDirectionX = direction === 'right' ? -1 : direction === 'left' ? 1 : 0
+      const trailDirectionY = direction === 'down' ? -1 : direction === 'up' ? 1 : 0
+      this.context.shadowColor = 'rgba(140, 220, 255, 0.5)'
+      this.context.shadowBlur = 12
+      for (let index = 0; index < 3; index += 1) {
+        const alpha = 0.16 - index * 0.04
+        const offset = 8 + index * 6
+        this.context.fillStyle = `rgba(126, 200, 255, ${alpha})`
+        this.context.beginPath()
+        this.context.arc(screen.x + trailDirectionX * offset, screen.y + trailDirectionY * offset, 6 - index, 0, Math.PI * 2)
+        this.context.fill()
+      }
+
+      this.context.fillStyle = '#ffffff'
+      this.context.beginPath()
+      this.context.arc(screen.x - 5, screen.y - 1, 4.8, 0, Math.PI * 2)
+      this.context.arc(screen.x + 5, screen.y - 1, 4.8, 0, Math.PI * 2)
+      this.context.fill()
+
+      this.context.fillStyle = '#4cc9f0'
+      this.context.beginPath()
+      this.context.arc(screen.x - 5 + eyeOffset * 1.6, screen.y - 1, 2.5, 0, Math.PI * 2)
+      this.context.arc(screen.x + 5 + eyeOffset * 1.6, screen.y - 1, 2.5, 0, Math.PI * 2)
+      this.context.fill()
+      this.context.restore()
+      return
+    }
 
     this.context.shadowColor = color
     this.context.shadowBlur = 16

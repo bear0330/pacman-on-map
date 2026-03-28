@@ -92,6 +92,10 @@ app.innerHTML = `
       <div id="map"></div>
       <div class="overlay">
         <canvas id="game-canvas"></canvas>
+        <div id="loading-indicator" class="loading-indicator hidden">
+          <div class="loading-spinner" aria-hidden="true"></div>
+          <div id="loading-text"></div>
+        </div>
         <div id="message" class="message"></div>
       </div>
     </main>
@@ -129,6 +133,8 @@ const statusLabelNode = requireElement<HTMLElement>('#status-label')
 const modeValue = requireElement<HTMLElement>('#mode-value')
 const tipControls = requireElement<HTMLElement>('#tip-controls')
 const tipGenerate = requireElement<HTMLElement>('#tip-generate')
+const loadingIndicator = requireElement<HTMLDivElement>('#loading-indicator')
+const loadingText = requireElement<HTMLDivElement>('#loading-text')
 const message = requireElement<HTMLDivElement>('#message')
 const mapRoot = requireElement<HTMLDivElement>('#map')
 const canvas = requireElement<HTMLCanvasElement>('#game-canvas')
@@ -144,6 +150,7 @@ let currentLocale: Locale = loadLocale()
 let currentMessage: { key: string; params?: Record<string, string | number> } = { key: 'message.initial' }
 let addressPresets: AddressPreset[] = []
 let movedMessageTimer: number | null = null
+let isGenerating = false
 
 function setText(node: HTMLElement, text: string): void {
   if (node.textContent !== text) {
@@ -164,6 +171,14 @@ function t(key: string, params?: Record<string, string | number>): string {
 function setMessageKey(key: string, params?: Record<string, string | number>): void {
   currentMessage = { key, params }
   setText(message, t(key, params))
+}
+
+function setGenerating(active: boolean): void {
+  isGenerating = active
+  loadingIndicator.classList.toggle('hidden', !active)
+  generateButton.disabled = active
+  loadingText.textContent = t('loading.overlay')
+  updateGenerateButtonHint()
 }
 
 function setMovedMessage(label: string, zoom: number): void {
@@ -216,6 +231,12 @@ function scheduleMovedMessage(label: string): void {
 }
 
 function updateGenerateButtonHint(): void {
+  if (isGenerating) {
+    setText(generateButton, `⏳ ${t('buttons.generate')}`)
+    generateButton.title = t('message.loading')
+    return
+  }
+
   const zoom = mapController.getViewport().zoom
   const zoomText = zoom.toFixed(1)
 
@@ -458,6 +479,7 @@ async function handlePresetSelect(): Promise<void> {
 
 async function generateMaze(): Promise<void> {
   setMessageKey('message.loading')
+  setGenerating(true)
   stopLoop()
   audio.setAmbience(false)
   try {
@@ -481,6 +503,8 @@ async function generateMaze(): Promise<void> {
     }
   } catch {
     setMessageKey('message.generateFailed')
+  } finally {
+    setGenerating(false)
   }
 }
 

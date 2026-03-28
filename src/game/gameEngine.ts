@@ -1,9 +1,9 @@
-import type { Direction, EntityState, EntityTravel, FloatingScore, GameEvent, GameState, GeoPoint, GhostMode, GhostState, PlayableMap, RoadGraphEdge, RoadGraphNode, VisualEffect } from '../types'
+import type { BonusFruit, BonusFruitType, Direction, EntityState, EntityTravel, FloatingScore, GameEvent, GameState, GeoPoint, GhostMode, GhostState, PlayableMap, RoadGraphEdge, RoadGraphNode, VisualEffect } from '../types'
 
 const PACMAN_SPEED = 42
 const GHOST_SPEED = 35
 const FRIGHTENED_SPEED = 26
-const EYES_SPEED = 58
+const EYES_SPEED = 84
 const POWER_DURATION_MS = 8_000
 const COLLISION_DISTANCE_METERS = 10
 const PELLET_COLLISION_DISTANCE_METERS = 7
@@ -11,15 +11,39 @@ const SPAWN_PROTECTION_MS = 2_000
 const GHOST_RELEASE_DELAY_MS = 1_200
 const FLOATING_SCORE_DURATION_MS = 1_200
 const EAT_GHOST_ANIMATION_MS = 450
+const EAT_GHOST_PAUSE_MS = 120
 const DEATH_ANIMATION_MS = 1_050
+const FRUIT_VISIBLE_MS = 9_000
+const FRUIT_COLLISION_DISTANCE_METERS = 12
+const EXTRA_LIFE_SCORE = 10_000
+const FRUIT_TRIGGER_PROGRESS = [0.29, 0.7]
 const GHOST_MEMORY_SIZE = 6
 const GHOST_COLORS = ['#ff595e', '#00bbf9', '#ffca3a', '#90be6d']
+const BONUS_FRUITS: Array<{ kind: BonusFruitType; score: number }> = [
+  { kind: 'cherry', score: 100 },
+  { kind: 'strawberry', score: 200 },
+  { kind: 'orange', score: 300 },
+  { kind: 'apple', score: 500 },
+]
 
 const DIRECTION_VECTORS: Record<Direction, { x: number; y: number }> = {
   up: { x: 0, y: 1 },
   down: { x: 0, y: -1 },
   left: { x: -1, y: 0 },
   right: { x: 1, y: 0 },
+}
+
+function oppositeDirection(direction: Direction): Direction {
+  if (direction === 'up') {
+    return 'down'
+  }
+  if (direction === 'down') {
+    return 'up'
+  }
+  if (direction === 'left') {
+    return 'right'
+  }
+  return 'left'
 }
 
 function distanceMeters(a: GeoPoint, b: GeoPoint): number {
@@ -132,8 +156,12 @@ export class GameEngine {
   private speedMultiplier = 1
   private frightenedGhostChain = 0
   private deathResolveAt = 0
+  private eatPauseUntil = 0
   private pendingRespawn = false
   private pendingGameover = false
+  private totalPelletsAtLevelStart = 0
+  private fruitTriggerIndex = 0
+  private extraLifeAwarded = false
 
   public constructor(map: PlayableMap) {
     this.map = map
@@ -147,6 +175,7 @@ export class GameEngine {
     }
     this.scatterTargetIds = this.buildScatterTargets()
     this.seedPellets()
+    this.totalPelletsAtLevelStart = this.pellets.size
     this.state = this.createInitialState()
   }
 
@@ -170,6 +199,7 @@ export class GameEngine {
       frightenedUntil: 0,
       floatingScores: [],
       visualEffects: [],
+      bonusFruit: null,
     }
   }
 
@@ -271,8 +301,12 @@ export class GameEngine {
     this.ghostsReleasedAt = 0
     this.frightenedGhostChain = 0
     this.deathResolveAt = 0
+    this.eatPauseUntil = 0
     this.pendingRespawn = false
     this.pendingGameover = false
+    this.totalPelletsAtLevelStart = this.pellets.size
+    this.fruitTriggerIndex = 0
+    this.extraLifeAwarded = false
   }
 
   public setDirection(direction: Direction): void {
@@ -280,6 +314,7 @@ export class GameEngine {
       return
     }
     this.state.pacman.pendingDirection = direction
+    this.tryReversePacman(direction)
     if (this.state.status === 'preview') {
       this.start()
     }
@@ -423,6 +458,24 @@ export class GameEngine {
     }
   }
 
+  private tryReversePacman(direction: Direction): void {
+    const pacman = this.state.pacman
+    const travel = pacman.travel
+    if (!travel || direction !== oppositeDirection(pacman.direction)) {
+      return
+    }
+
+    pacman.travel = {
+      edgeId: travel.edgeId,
+      fromNodeId: travel.toNodeId,
+      toNodeId: travel.fromNodeId,
+      progress: 1 - travel.progress,
+    }
+    pacman.currentNodeId = null
+    pacman.lastNodeId = travel.toNodeId
+    pacman.direction = direction
+  }
+
   private chooseGhostEdge(ghost: GhostState): void {
     if (!ghost.currentNodeId) {
       return
@@ -435,7 +488,15 @@ export class GameEngine {
     }
 
     let nextNodeId: string | null = null
-    if (ghost.mode === 'frightened') {
+    if (ghost.mode === 'eyes') {
+      if (ghost.currentNodeId === ghost.homeNodeId) {
+        return
+      }
+      nextNodeId = this.findPathNextHop(node.id, ghost.homeNodeId, null)
+        ?? [...candidates]
+          .sort((a, b) => distanceMeters(a, this.requireNode(ghost.homeNodeId)) - distanceMeters(b, this.requireNode(ghost.homeNodeId)))[0]?.id
+        ?? candidates[0].id
+    } else if (ghost.mode === 'frightened') {
       const pool = candidates
         .filter((candidate) =>
           !(ghost.lastNodeId && candidate.id === ghost.lastNodeId && candidates.length > 1)
@@ -457,6 +518,17 @@ export class GameEngine {
     }
 
     this.startTravel(ghost, nextNodeId)
+  }
+
+  private recoverGhostsAtHome(): void {
+    for (const ghost of this.state.ghosts) {
+      if (ghost.mode !== 'eyes' || ghost.travel || ghost.currentNodeId !== ghost.homeNodeId) {
+        continue
+      }
+      ghost.mode = 'chase'
+      ghost.lastNodeId = null
+      ghost.recentNodeIds = [ghost.homeNodeId]
+    }
   }
 
   private moveTraveler(entity: EntityState | GhostState, distance: number): void {
@@ -594,6 +666,7 @@ export class GameEngine {
       consumed.push(pellet.id)
       this.state.score += pellet.power ? 50 : 10
       this.state.remainingPellets -= 1
+      this.awardExtraLifeIfEligible()
       this.pushEvent(pellet.power ? 'power' : 'pellet')
       if (pellet.power) {
         this.state.frightenedUntil = performance.now() + POWER_DURATION_MS
@@ -647,6 +720,79 @@ export class GameEngine {
     this.state.visualEffects = this.state.visualEffects.filter((item) => item.expiresAt > timestamp)
   }
 
+  private awardExtraLifeIfEligible(): void {
+    if (this.extraLifeAwarded || this.state.score < EXTRA_LIFE_SCORE) {
+      return
+    }
+    this.extraLifeAwarded = true
+    this.state.lives += 1
+    this.pushEvent('extra-life')
+  }
+
+  private chooseFruitSpawnNode(): RoadGraphNode | null {
+    const spawn = this.requireNode(this.map.spawnNodeId)
+    const homeIds = new Set(this.map.ghostHomeNodeIds)
+    const candidates = this.map.nodes
+      .filter((node) =>
+        node.neighbors.length > 0
+        && !homeIds.has(node.id)
+        && distanceMeters(node, spawn) >= 45)
+      .sort((a, b) => distanceMeters(a, this.map.center) - distanceMeters(b, this.map.center))
+
+    return candidates[0] ?? null
+  }
+
+  private maybeSpawnBonusFruitFromProgress(timestamp: number): void {
+    if (this.state.bonusFruit) {
+      if (timestamp >= this.state.bonusFruit.expiresAt) {
+        this.state.bonusFruit = null
+      }
+      return
+    }
+
+    if (this.fruitTriggerIndex >= FRUIT_TRIGGER_PROGRESS.length || this.totalPelletsAtLevelStart <= 0) {
+      return
+    }
+
+    const eatenRatio = (this.totalPelletsAtLevelStart - this.state.remainingPellets) / this.totalPelletsAtLevelStart
+    if (eatenRatio < FRUIT_TRIGGER_PROGRESS[this.fruitTriggerIndex]) {
+      return
+    }
+
+    const node = this.chooseFruitSpawnNode()
+    if (!node) {
+      this.fruitTriggerIndex += 1
+      return
+    }
+
+    const fruitDef = BONUS_FRUITS[Math.floor(Math.random() * BONUS_FRUITS.length)]
+    this.state.bonusFruit = {
+      id: `fruit:${timestamp}:${fruitDef.kind}`,
+      kind: fruitDef.kind,
+      score: fruitDef.score,
+      lng: node.lng,
+      lat: node.lat,
+      createdAt: timestamp,
+      expiresAt: timestamp + FRUIT_VISIBLE_MS,
+    }
+    this.fruitTriggerIndex += 1
+  }
+
+  private consumeBonusFruit(timestamp: number): void {
+    const fruit = this.state.bonusFruit
+    if (!fruit) {
+      return
+    }
+    if (distanceMeters(this.state.pacman.position, fruit) > FRUIT_COLLISION_DISTANCE_METERS) {
+      return
+    }
+    this.state.score += fruit.score
+    this.addFloatingScore(fruit.score, fruit, timestamp)
+    this.state.bonusFruit = null
+    this.awardExtraLifeIfEligible()
+    this.pushEvent('fruit')
+  }
+
   private beginDeathSequence(timestamp: number, gameover: boolean): void {
     this.state.status = 'dying'
     this.deathResolveAt = timestamp + DEATH_ANIMATION_MS
@@ -676,6 +822,7 @@ export class GameEngine {
     this.spawnProtectedUntil = 0
     this.ghostsReleasedAt = 0
     this.frightenedGhostChain = 0
+    this.state.bonusFruit = null
   }
 
   private resolveCollisions(timestamp: number, pacmanBefore: EntitySnapshot, ghostSnapshotsBefore: EntitySnapshot[]): void {
@@ -690,20 +837,19 @@ export class GameEngine {
       }
 
       if (ghost.mode === 'frightened') {
-        const home = this.requireNode(ghost.homeNodeId)
         const ghostPosition = {
           lng: ghost.position.lng,
           lat: ghost.position.lat,
         }
         ghost.mode = 'eyes'
-        ghost.currentNodeId = home.id
-        ghost.travel = null
-        ghost.position = cloneNodePosition(home)
+        ghost.recentNodeIds = [ghost.currentNodeId ?? ghost.travel?.toNodeId ?? ghost.homeNodeId]
         const comboScore = 200 * (2 ** this.frightenedGhostChain)
         this.frightenedGhostChain = Math.min(3, this.frightenedGhostChain + 1)
         this.state.score += comboScore
+        this.awardExtraLifeIfEligible()
         this.addFloatingScore(comboScore, ghostPosition, timestamp)
         this.addVisualEffect('eat-ghost', ghostPosition, timestamp, EAT_GHOST_ANIMATION_MS)
+        this.eatPauseUntil = timestamp + EAT_GHOST_PAUSE_MS
         this.pushEvent('eat-ghost')
         continue
       }
@@ -739,6 +885,11 @@ export class GameEngine {
       return
     }
 
+    if (timestamp < this.eatPauseUntil) {
+      this.lastTimestamp = timestamp
+      return
+    }
+
     const pacmanBefore = this.snapshotEntity(this.state.pacman)
     const ghostsBefore = this.state.ghosts.map((ghost) => this.snapshotEntity(ghost))
     const delta = Math.min(80, timestamp - this.lastTimestamp)
@@ -747,9 +898,12 @@ export class GameEngine {
     if (!frightened) {
       this.frightenedGhostChain = 0
     }
+    this.recoverGhostsAtHome()
     const pacmanDistance = PACMAN_SPEED * this.speedMultiplier * (delta / 1000)
     this.moveTraveler(this.state.pacman, pacmanDistance)
     this.consumePellets()
+    this.maybeSpawnBonusFruitFromProgress(timestamp)
+    this.consumeBonusFruit(timestamp)
 
     if (timestamp >= this.ghostsReleasedAt) {
       for (const ghost of this.state.ghosts) {
@@ -779,5 +933,9 @@ export class GameEngine {
     }
 
     return { pellets, powerPellets }
+  }
+
+  public getBonusFruit(): BonusFruit | null {
+    return this.state.bonusFruit
   }
 }

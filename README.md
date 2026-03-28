@@ -93,6 +93,7 @@ Current tests cover road clipping, map generation, collisions, scoring chains, a
 - This is a fan-made tribute project.
 - It is not affiliated with or endorsed by Google, Namco, or Bandai Namco.
 - The project avoids bundling original Pac-Man commercial assets.
+- The bundled `level-intro.mid` was sourced from Khinsider: https://www.khinsider.com/midi/arcade/pac-man
 - If you want to fork it and improve it, please do. Just do not come in expecting polished enterprise-grade code from every corner of the repo.
 
 If this little remake makes one kid smile on a random street corner somewhere in the world, it did its job.

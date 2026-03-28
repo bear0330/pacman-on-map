@@ -2,7 +2,7 @@ export type SourceMode = 'road' | 'hybrid' | 'generated'
 export type Direction = 'up' | 'down' | 'left' | 'right'
 export type GameStatus = 'idle' | 'preview' | 'playing' | 'paused' | 'dying' | 'gameover' | 'win'
 export type GhostMode = 'chase' | 'frightened' | 'eyes'
-export type GameEventType = 'start' | 'pellet' | 'power' | 'eat-ghost' | 'lose-life' | 'gameover' | 'win'
+export type GameEventType = 'start' | 'pellet' | 'power' | 'fruit' | 'extra-life' | 'eat-ghost' | 'lose-life' | 'gameover' | 'win'
 
 export interface Bounds {
   north: number
@@ -51,6 +51,16 @@ export interface Pellet extends GeoPoint {
   edgeId: string
   progress: number
   power: boolean
+}
+
+export type BonusFruitType = 'cherry' | 'strawberry' | 'orange' | 'apple'
+
+export interface BonusFruit extends GeoPoint {
+  id: string
+  kind: BonusFruitType
+  score: number
+  createdAt: number
+  expiresAt: number
 }
 
 export interface PlayableMap {
@@ -105,6 +115,7 @@ export interface GameState {
   frightenedUntil: number
   floatingScores: FloatingScore[]
   visualEffects: VisualEffect[]
+  bonusFruit: BonusFruit | null
 }
 
 export interface SearchResult {
