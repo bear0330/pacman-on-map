@@ -9,6 +9,10 @@ import { MapController } from './map/mapController'
 import { CanvasRenderer } from './render/canvasRenderer'
 import type { AddressPreset, Direction, PlayableMap } from './types'
 
+const RECOMMENDED_ZOOM_MIN = 17
+const RECOMMENDED_ZOOM_MAX = 18
+const RECOMMENDED_ZOOM_RANGE = '17-18'
+
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector)
   if (!element) {
@@ -56,32 +60,31 @@ app.innerHTML = `
           <button id="pause-button" type="button"></button>
           <button id="restart-button" type="button"></button>
         </div>
-        <label class="speed-control">
+        <label class="inline-control">
           <span id="speed-label"></span>
-          <div class="speed-row">
-            <input id="speed-input" type="range" min="0.8" max="2.4" step="0.1" value="1.0" />
-            <strong id="speed-value">1.0x</strong>
-          </div>
+          <input id="speed-input" type="range" min="0.8" max="2.4" step="0.1" value="1.0" />
+          <strong id="speed-value">1.0x</strong>
         </label>
-        <label class="speed-control">
+        <label class="inline-control">
           <span id="pellet-label"></span>
-          <div class="speed-row">
-            <input id="pellet-input" type="range" min="1.0" max="5.0" step="0.5" value="2.0" />
-            <strong id="pellet-value">2.0x</strong>
-          </div>
+          <input id="pellet-input" type="range" min="1.0" max="5.0" step="0.5" value="2.0" />
+          <strong id="pellet-value">2.0x</strong>
         </label>
       </div>
 
       <div class="stats">
-        <div><span id="mode-label"></span><strong id="mode-value">idle</strong></div>
         <div><span id="score-label"></span><strong id="score-value">0</strong></div>
-        <div><span id="lives-label"></span><strong id="lives-value">3</strong></div>
+        <div><span id="lives-label"></span><div id="lives-value" class="life-icons"></div></div>
         <div><span id="status-label"></span><strong id="status-value">Idle</strong></div>
       </div>
 
       <div class="tips">
         <p id="tip-controls"></p>
         <p id="tip-generate"></p>
+      </div>
+      <div class="debug-line">
+        <span id="mode-label"></span>
+        <strong id="mode-value">idle</strong>
       </div>
     </aside>
 
@@ -140,6 +143,7 @@ let animationFrame = 0
 let currentLocale: Locale = loadLocale()
 let currentMessage: { key: string; params?: Record<string, string | number> } = { key: 'message.initial' }
 let addressPresets: AddressPreset[] = []
+let movedMessageTimer: number | null = null
 
 function setText(node: HTMLElement, text: string): void {
   if (node.textContent !== text) {
@@ -162,6 +166,64 @@ function setMessageKey(key: string, params?: Record<string, string | number>): v
   setText(message, t(key, params))
 }
 
+function setMovedMessage(label: string, zoom: number): void {
+  setMessageKey('message.moved', {
+    label,
+    zoom: zoom.toFixed(1),
+    range: RECOMMENDED_ZOOM_RANGE,
+  })
+}
+
+function setViewportGuidanceMessage(): void {
+  const zoom = mapController.getViewport().zoom
+  const params = {
+    zoom: zoom.toFixed(1),
+    range: RECOMMENDED_ZOOM_RANGE,
+  }
+
+  if (zoom < RECOMMENDED_ZOOM_MIN) {
+    setMessageKey('message.viewportWide', params)
+    return
+  }
+
+  if (zoom > RECOMMENDED_ZOOM_MAX) {
+    setMessageKey('message.viewportTight', params)
+    return
+  }
+
+  setMessageKey('message.viewportGood', params)
+}
+
+function scheduleMovedMessage(label: string): void {
+  if (movedMessageTimer !== null) {
+    window.clearTimeout(movedMessageTimer)
+  }
+  movedMessageTimer = window.setTimeout(() => {
+    setMovedMessage(label, mapController.getViewport().zoom)
+    movedMessageTimer = null
+  }, 650)
+}
+
+function updateGenerateButtonHint(): void {
+  const zoom = mapController.getViewport().zoom
+  const zoomText = zoom.toFixed(1)
+
+  if (zoom < RECOMMENDED_ZOOM_MIN) {
+    setText(generateButton, `⚠️ ${t('buttons.generate')}`)
+    generateButton.title = t('buttons.generateWideHint', { zoom: zoomText })
+    return
+  }
+
+  if (zoom > RECOMMENDED_ZOOM_MAX) {
+    setText(generateButton, `🔎 ${t('buttons.generate')}`)
+    generateButton.title = t('buttons.generateTightHint', { zoom: zoomText })
+    return
+  }
+
+  setText(generateButton, t('buttons.generate'))
+  generateButton.title = t('buttons.generateGoodHint', { zoom: zoomText })
+}
+
 function renderLocale(): void {
   document.documentElement.lang = currentLocale
   localeSelect.innerHTML = ''
@@ -181,7 +243,6 @@ function renderLocale(): void {
   setText(searchLabel, t('controls.search'))
   searchInput.placeholder = t('search.placeholder')
   setText(searchButton, t('buttons.search'))
-  setText(generateButton, t('buttons.generate'))
   setText(playButton, t('buttons.play'))
   setText(pauseButton, t('buttons.pause'))
   setText(restartButton, t('buttons.restart'))
@@ -193,7 +254,12 @@ function renderLocale(): void {
   setText(statusLabelNode, t('stats.status'))
   setText(tipControls, t('tips.controls'))
   setHtml(tipGenerate, t('tips.generate'))
-  setText(message, t(currentMessage.key, currentMessage.params))
+  updateGenerateButtonHint()
+  if (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport')) {
+    setViewportGuidanceMessage()
+  } else {
+    setText(message, t(currentMessage.key, currentMessage.params))
+  }
   renderPresetOptions()
   syncHud()
 }
@@ -231,17 +297,23 @@ function applyPelletDensity(): void {
   pelletValue.textContent = `${value.toFixed(1)}x`
 }
 
+function renderLives(count: number): void {
+  const icons = Array.from({ length: Math.max(0, count) }, (_, index) =>
+    `<span class="life-icon" aria-hidden="true" style="animation-delay:${index * 0.06}s"></span>`)
+  setHtml(livesValue, icons.join(''))
+}
+
 function syncHud(): void {
   if (!engine) {
     setText(scoreValue, '0')
-    setText(livesValue, '3')
+    renderLives(3)
     setText(statusValue, playableMap ? statusLabel(currentLocale, 'preview') : statusLabel(currentLocale, 'idle'))
     setText(modeValue, modeLabel(currentLocale, playableMap?.sourceMode ?? 'idle'))
     return
   }
 
   setText(scoreValue, String(engine.state.score))
-  setText(livesValue, String(engine.state.lives))
+  renderLives(engine.state.lives)
   setText(statusValue, statusLabel(currentLocale, engine.state.status))
   setText(modeValue, modeLabel(currentLocale, engine.map.sourceMode))
 
@@ -325,7 +397,7 @@ async function handleSearch(): Promise<void> {
       button.textContent = result.label
       button.addEventListener('click', () => {
         mapController.flyTo(result.lng, result.lat)
-        setMessageKey('message.moved', { label: result.label })
+        scheduleMovedMessage(result.label)
       })
       searchResults.append(button)
     }
@@ -347,7 +419,7 @@ async function handlePresetSelect(): Promise<void> {
   setMessageKey('message.loadingPreset', { label: preset.label })
   if (typeof preset.lat === 'number' && typeof preset.lng === 'number') {
     mapController.flyTo(preset.lng, preset.lat)
-    setMessageKey('message.moved', { label: preset.label })
+    scheduleMovedMessage(preset.label)
     presetSelect.value = ''
     return
   }
@@ -365,7 +437,7 @@ async function handlePresetSelect(): Promise<void> {
       return
     }
     mapController.flyTo(target.lng, target.lat)
-    setMessageKey('message.moved', { label: preset.label })
+    scheduleMovedMessage(preset.label)
   } catch {
     setMessageKey('message.searchFailed')
   } finally {
@@ -388,7 +460,14 @@ async function generateMaze(): Promise<void> {
     applySpeed()
     drawCurrentFrame()
     syncHud()
-    setMessageKey('message.generated', { mode: modeLabel(currentLocale, playableMap.sourceMode).toLowerCase() })
+    if (viewport.zoom < RECOMMENDED_ZOOM_MIN) {
+      setMessageKey('message.generatedWide', {
+        mode: modeLabel(currentLocale, playableMap.sourceMode).toLowerCase(),
+        zoom: viewport.zoom.toFixed(1),
+      })
+    } else {
+      setMessageKey('message.generated', { mode: modeLabel(currentLocale, playableMap.sourceMode).toLowerCase() })
+    }
   } catch {
     setMessageKey('message.generateFailed')
   }
@@ -504,7 +583,11 @@ applySpeed()
 applyPelletDensity()
 renderLocale()
 mapController.onViewChange(() => {
+  updateGenerateButtonHint()
+  if (!engine && (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport'))) {
+    setViewportGuidanceMessage()
+  }
   drawCurrentFrame()
 })
-setMessageKey('message.initial')
+setViewportGuidanceMessage()
 syncHud()
