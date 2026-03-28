@@ -194,6 +194,17 @@ function setViewportGuidanceMessage(): void {
   setMessageKey('message.viewportGood', params)
 }
 
+function refreshViewportMessage(): void {
+  if (currentMessage.key === 'message.moved' && typeof currentMessage.params?.label === 'string') {
+    setMovedMessage(currentMessage.params.label, mapController.getViewport().zoom)
+    return
+  }
+
+  if (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport')) {
+    setViewportGuidanceMessage()
+  }
+}
+
 function scheduleMovedMessage(label: string): void {
   if (movedMessageTimer !== null) {
     window.clearTimeout(movedMessageTimer)
@@ -255,8 +266,8 @@ function renderLocale(): void {
   setText(tipControls, t('tips.controls'))
   setHtml(tipGenerate, t('tips.generate'))
   updateGenerateButtonHint()
-  if (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport')) {
-    setViewportGuidanceMessage()
+  if (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport') || currentMessage.key === 'message.moved') {
+    refreshViewportMessage()
   } else {
     setText(message, t(currentMessage.key, currentMessage.params))
   }
@@ -584,8 +595,8 @@ applyPelletDensity()
 renderLocale()
 mapController.onViewChange(() => {
   updateGenerateButtonHint()
-  if (!engine && (currentMessage.key === 'message.initial' || currentMessage.key.startsWith('message.viewport'))) {
-    setViewportGuidanceMessage()
+  if (!engine) {
+    refreshViewportMessage()
   }
   drawCurrentFrame()
 })
