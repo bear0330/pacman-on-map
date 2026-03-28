@@ -34,7 +34,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -63,6 +64,7 @@ code {
 }
 
 .panel {
+  position: relative;
   background: var(--panel);
   color: var(--text);
   border-radius: 28px;
@@ -72,6 +74,23 @@ code {
   flex-direction: column;
   gap: 24px;
   box-shadow: var(--shadow);
+}
+
+.corner-control {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+}
+
+.corner-control select {
+  min-height: 36px;
+  min-width: 112px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  padding: 0 10px;
 }
 
 .eyebrow {
@@ -147,6 +166,7 @@ h1 {
 }
 
 input,
+select,
 .button-row button,
 .search-row button,
 .result {
@@ -156,6 +176,12 @@ input,
 }
 
 input {
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--ink);
+  padding: 0 14px;
+}
+
+select {
   background: rgba(255, 255, 255, 0.94);
   color: var(--ink);
   padding: 0 14px;
@@ -249,6 +275,10 @@ input {
   backdrop-filter: blur(8px);
 }
 
+.hidden {
+  display: none !important;
+}
+
 .maplibregl-control-container {
   font-family: var(--sans);
 }
@@ -279,6 +309,11 @@ input {
 
   .panel {
     padding: 18px;
+  }
+
+  .corner-control {
+    top: 12px;
+    right: 12px;
   }
 
   .button-row,

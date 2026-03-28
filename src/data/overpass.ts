@@ -1,7 +1,8 @@
-import type { Bounds, RoadData, RoadGraphEdge, RoadGraphNode, SearchResult } from '../types'
+import type { AddressPreset, Bounds, RoadData, RoadGraphEdge, RoadGraphNode, SearchResult } from '../types'
 
 const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
+const ADDRESS_PRESETS_URL = '/addresses.txt'
 const PLAYABLE_HIGHWAYS = new Set([
   'residential',
   'living_street',
@@ -78,6 +79,55 @@ export async function searchPlaces(query: string): Promise<SearchResult[]> {
     lat: Number(item.lat),
     lng: Number(item.lon),
   }))
+}
+
+function parseAddressPreset(line: string): AddressPreset | null {
+  const trimmed = line.trim()
+  if (!trimmed || trimmed.startsWith('#')) {
+    return null
+  }
+
+  const parts = trimmed.split('|').map((part) => part.trim()).filter(Boolean)
+  if (parts.length === 1) {
+    return {
+      label: parts[0],
+      query: parts[0],
+    }
+  }
+  if (parts.length === 2) {
+    return {
+      label: parts[0],
+      query: parts[1],
+    }
+  }
+  if (parts.length >= 3) {
+    const lat = Number(parts[1])
+    const lng = Number(parts[2])
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      return {
+        label: parts[0],
+        lat,
+        lng,
+      }
+    }
+  }
+  return null
+}
+
+export async function loadAddressPresets(): Promise<AddressPreset[]> {
+  try {
+    const response = await fetch(ADDRESS_PRESETS_URL, { cache: 'no-cache' })
+    if (!response.ok) {
+      return []
+    }
+    const text = await response.text()
+    return text
+      .split(/\r?\n/)
+      .map(parseAddressPreset)
+      .filter((preset): preset is AddressPreset => Boolean(preset))
+  } catch {
+    return []
+  }
 }
 
 export async function fetchRoadData(bounds: Bounds): Promise<RoadData> {

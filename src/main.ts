@@ -1,12 +1,13 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
 import './style.css'
 import { SynthAudio } from './audio/synthAudio'
-import { fetchRoadData, searchPlaces } from './data/overpass'
+import { fetchRoadData, loadAddressPresets, searchPlaces } from './data/overpass'
 import { GameEngine } from './game/gameEngine'
 import { generatePlayableMap } from './generator/generatePlayableMap'
+import { loadLocale, localeOptions, modeLabel, saveLocale, statusLabel, translate, type Locale } from './i18n'
 import { MapController } from './map/mapController'
 import { CanvasRenderer } from './render/canvasRenderer'
-import type { Direction, PlayableMap } from './types'
+import type { AddressPreset, Direction, PlayableMap } from './types'
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector)
@@ -25,53 +26,62 @@ if (!app) {
 app.innerHTML = `
   <div class="shell">
     <aside class="panel">
+      <div class="corner-control">
+        <select id="locale-select"></select>
+      </div>
       <div>
-        <p class="eyebrow">Map Pac-Man</p>
-        <h1>讓 Pac-Man 真正貼著地圖道路玩</h1>
-        <p class="intro">把地圖道路變成可玩的 Pac-Man 關卡。</p>
+        <p class="eyebrow" id="eyebrow"></p>
+        <h1 id="title"></h1>
+        <p class="intro" id="intro"></p>
       </div>
 
       <div class="controls">
-        <label class="search">
-          <span>地點搜尋</span>
+        <label id="preset-control" class="speed-control hidden">
+          <span id="preset-label"></span>
           <div class="search-row">
-            <input id="search-input" type="text" placeholder="例如: Shibuya Crossing, Taipei 101, Manhattan" />
-            <button id="search-button" type="button">Search</button>
+            <select id="preset-select"></select>
+          </div>
+        </label>
+        <label class="search">
+          <span id="search-label"></span>
+          <div class="search-row">
+            <input id="search-input" type="text" />
+            <button id="search-button" type="button"></button>
           </div>
         </label>
         <div id="search-results" class="search-results"></div>
         <div class="button-row">
-          <button id="generate-button" type="button" class="primary">Generate Road Maze</button>
-          <button id="play-button" type="button">Play</button>
-          <button id="pause-button" type="button">Pause</button>
-          <button id="restart-button" type="button">Restart</button>
+          <button id="generate-button" type="button" class="primary"></button>
+          <button id="play-button" type="button"></button>
+          <button id="pause-button" type="button"></button>
+          <button id="restart-button" type="button"></button>
         </div>
         <label class="speed-control">
-          <span>Speed</span>
+          <span id="speed-label"></span>
           <div class="speed-row">
             <input id="speed-input" type="range" min="0.8" max="2.4" step="0.1" value="1.0" />
             <strong id="speed-value">1.0x</strong>
           </div>
         </label>
         <label class="speed-control">
-          <span>Pellets</span>
+          <span id="pellet-label"></span>
           <div class="speed-row">
-            <input id="pellet-input" type="range" min="1.0" max="5.0" step="0.5" value="3.0" />
-            <strong id="pellet-value">3.0x</strong>
+            <input id="pellet-input" type="range" min="1.0" max="5.0" step="0.5" value="2.0" />
+            <strong id="pellet-value">2.0x</strong>
           </div>
         </label>
       </div>
 
       <div class="stats">
-        <div><span>Mode</span><strong id="mode-value">idle</strong></div>
-        <div><span>Score</span><strong id="score-value">0</strong></div>
-        <div><span>Lives</span><strong id="lives-value">3</strong></div>
-        <div><span>Status</span><strong id="status-value">Idle</strong></div>
+        <div><span id="mode-label"></span><strong id="mode-value">idle</strong></div>
+        <div><span id="score-label"></span><strong id="score-value">0</strong></div>
+        <div><span id="lives-label"></span><strong id="lives-value">3</strong></div>
+        <div><span id="status-label"></span><strong id="status-value">Idle</strong></div>
       </div>
 
       <div class="tips">
-        <p>Controls: Arrow keys / WASD</p>
-        <p>先把地圖移到想玩的區域，再按 <code>Generate Road Maze</code>。</p>
+        <p id="tip-controls"></p>
+        <p id="tip-generate"></p>
       </div>
     </aside>
 
@@ -79,13 +89,21 @@ app.innerHTML = `
       <div id="map"></div>
       <div class="overlay">
         <canvas id="game-canvas"></canvas>
-        <div id="message" class="message">Move to a city block and generate a road-based maze.</div>
+        <div id="message" class="message"></div>
       </div>
     </main>
   </div>
 `
 
+const eyebrow = requireElement<HTMLElement>('#eyebrow')
+const title = requireElement<HTMLElement>('#title')
+const intro = requireElement<HTMLElement>('#intro')
+const localeSelect = requireElement<HTMLSelectElement>('#locale-select')
+const presetControl = requireElement<HTMLElement>('#preset-control')
+const presetLabel = requireElement<HTMLElement>('#preset-label')
+const presetSelect = requireElement<HTMLSelectElement>('#preset-select')
 const searchInput = requireElement<HTMLInputElement>('#search-input')
+const searchLabel = requireElement<HTMLElement>('#search-label')
 const searchButton = requireElement<HTMLButtonElement>('#search-button')
 const searchResults = requireElement<HTMLDivElement>('#search-results')
 const generateButton = requireElement<HTMLButtonElement>('#generate-button')
@@ -93,13 +111,21 @@ const playButton = requireElement<HTMLButtonElement>('#play-button')
 const pauseButton = requireElement<HTMLButtonElement>('#pause-button')
 const restartButton = requireElement<HTMLButtonElement>('#restart-button')
 const speedInput = requireElement<HTMLInputElement>('#speed-input')
+const speedLabel = requireElement<HTMLElement>('#speed-label')
 const speedValue = requireElement<HTMLElement>('#speed-value')
 const pelletInput = requireElement<HTMLInputElement>('#pellet-input')
+const pelletLabel = requireElement<HTMLElement>('#pellet-label')
 const pelletValue = requireElement<HTMLElement>('#pellet-value')
+const modeLabelNode = requireElement<HTMLElement>('#mode-label')
 const scoreValue = requireElement<HTMLElement>('#score-value')
+const scoreLabelNode = requireElement<HTMLElement>('#score-label')
 const livesValue = requireElement<HTMLElement>('#lives-value')
+const livesLabelNode = requireElement<HTMLElement>('#lives-label')
 const statusValue = requireElement<HTMLElement>('#status-value')
+const statusLabelNode = requireElement<HTMLElement>('#status-label')
 const modeValue = requireElement<HTMLElement>('#mode-value')
+const tipControls = requireElement<HTMLElement>('#tip-controls')
+const tipGenerate = requireElement<HTMLElement>('#tip-generate')
 const message = requireElement<HTMLDivElement>('#message')
 const mapRoot = requireElement<HTMLDivElement>('#map')
 const canvas = requireElement<HTMLCanvasElement>('#game-canvas')
@@ -111,6 +137,9 @@ const audio = new SynthAudio()
 let playableMap: PlayableMap | null = null
 let engine: GameEngine | null = null
 let animationFrame = 0
+let currentLocale: Locale = loadLocale()
+let currentMessage: { key: string; params?: Record<string, string | number> } = { key: 'message.initial' }
+let addressPresets: AddressPreset[] = []
 
 function setText(node: HTMLElement, text: string): void {
   if (node.textContent !== text) {
@@ -118,8 +147,77 @@ function setText(node: HTMLElement, text: string): void {
   }
 }
 
-function setMessage(text: string): void {
-  setText(message, text)
+function setHtml(node: HTMLElement, html: string): void {
+  if (node.innerHTML !== html) {
+    node.innerHTML = html
+  }
+}
+
+function t(key: string, params?: Record<string, string | number>): string {
+  return translate(currentLocale, key, params)
+}
+
+function setMessageKey(key: string, params?: Record<string, string | number>): void {
+  currentMessage = { key, params }
+  setText(message, t(key, params))
+}
+
+function renderLocale(): void {
+  document.documentElement.lang = currentLocale
+  localeSelect.innerHTML = ''
+  for (const option of localeOptions) {
+    const element = document.createElement('option')
+    element.value = option.value
+    element.textContent = option.label
+    localeSelect.append(element)
+  }
+  localeSelect.value = currentLocale
+
+  setText(eyebrow, t('app.eyebrow'))
+  setText(title, t('app.title'))
+  setText(intro, t('app.intro'))
+  localeSelect.title = t('controls.language')
+  setText(presetLabel, t('controls.presets'))
+  setText(searchLabel, t('controls.search'))
+  searchInput.placeholder = t('search.placeholder')
+  setText(searchButton, t('buttons.search'))
+  setText(generateButton, t('buttons.generate'))
+  setText(playButton, t('buttons.play'))
+  setText(pauseButton, t('buttons.pause'))
+  setText(restartButton, t('buttons.restart'))
+  setText(speedLabel, t('controls.speed'))
+  setText(pelletLabel, t('controls.pellets'))
+  setText(modeLabelNode, t('stats.mode'))
+  setText(scoreLabelNode, t('stats.score'))
+  setText(livesLabelNode, t('stats.lives'))
+  setText(statusLabelNode, t('stats.status'))
+  setText(tipControls, t('tips.controls'))
+  setHtml(tipGenerate, t('tips.generate'))
+  setText(message, t(currentMessage.key, currentMessage.params))
+  renderPresetOptions()
+  syncHud()
+}
+
+function renderPresetOptions(): void {
+  if (addressPresets.length === 0) {
+    presetControl.classList.add('hidden')
+    return
+  }
+
+  presetControl.classList.remove('hidden')
+  presetSelect.innerHTML = ''
+  const placeholder = document.createElement('option')
+  placeholder.value = ''
+  placeholder.textContent = t('presets.placeholder')
+  presetSelect.append(placeholder)
+
+  addressPresets.forEach((preset, index) => {
+    const option = document.createElement('option')
+    option.value = String(index)
+    option.textContent = preset.label
+    presetSelect.append(option)
+  })
+  presetSelect.value = ''
 }
 
 function applySpeed(): void {
@@ -137,28 +235,28 @@ function syncHud(): void {
   if (!engine) {
     setText(scoreValue, '0')
     setText(livesValue, '3')
-    setText(statusValue, playableMap ? 'Preview' : 'Idle')
-    setText(modeValue, playableMap?.sourceMode ?? 'idle')
+    setText(statusValue, playableMap ? statusLabel(currentLocale, 'preview') : statusLabel(currentLocale, 'idle'))
+    setText(modeValue, modeLabel(currentLocale, playableMap?.sourceMode ?? 'idle'))
     return
   }
 
   setText(scoreValue, String(engine.state.score))
   setText(livesValue, String(engine.state.lives))
-  setText(statusValue, engine.state.status)
-  setText(modeValue, engine.map.sourceMode)
+  setText(statusValue, statusLabel(currentLocale, engine.state.status))
+  setText(modeValue, modeLabel(currentLocale, engine.map.sourceMode))
 
   if (engine.state.status === 'win') {
-    setMessage('Cleared. Generate another district or restart this run.')
+    setMessageKey('message.win')
   } else if (engine.state.status === 'gameover') {
-    setMessage('Game over. Restart to replay this road layout.')
+    setMessageKey('message.gameover')
   } else if (engine.state.status === 'dying') {
-    setMessage('Ouch. Respawning...')
+    setMessageKey('message.dying')
   } else if (engine.state.status === 'paused') {
-    setMessage('Paused.')
+    setMessageKey('message.paused')
   } else if (engine.state.status === 'preview') {
-    setMessage('Road maze ready. Press Play or use direction keys.')
+    setMessageKey('message.preview')
   } else {
-    setMessage('Now the pellets, ghosts and movement are following the road graph itself.')
+    setMessageKey('message.playing')
   }
 }
 
@@ -207,16 +305,16 @@ function startLoop(): void {
 async function handleSearch(): Promise<void> {
   const query = searchInput.value.trim()
   if (!query) {
-    setMessage('Enter a place name first.')
+    setMessageKey('message.noQuery')
     return
   }
 
-  setMessage('Searching places...')
+  setMessageKey('message.searching')
   searchResults.innerHTML = ''
   try {
     const results = await searchPlaces(query)
     if (results.length === 0) {
-      setMessage('No results found.')
+      setMessageKey('message.noResults')
       return
     }
 
@@ -227,17 +325,56 @@ async function handleSearch(): Promise<void> {
       button.textContent = result.label
       button.addEventListener('click', () => {
         mapController.flyTo(result.lng, result.lat)
-        setMessage(`Moved to ${result.label}. Generate a road maze when ready.`)
+        setMessageKey('message.moved', { label: result.label })
       })
       searchResults.append(button)
     }
   } catch {
-    setMessage('Search failed. Try another place or drag the map manually.')
+    setMessageKey('message.searchFailed')
+  }
+}
+
+async function handlePresetSelect(): Promise<void> {
+  const selected = presetSelect.value
+  if (!selected) {
+    return
+  }
+  const preset = addressPresets[Number(selected)]
+  if (!preset) {
+    return
+  }
+
+  setMessageKey('message.loadingPreset', { label: preset.label })
+  if (typeof preset.lat === 'number' && typeof preset.lng === 'number') {
+    mapController.flyTo(preset.lng, preset.lat)
+    setMessageKey('message.moved', { label: preset.label })
+    presetSelect.value = ''
+    return
+  }
+
+  if (!preset.query) {
+    presetSelect.value = ''
+    return
+  }
+
+  try {
+    const results = await searchPlaces(preset.query)
+    const target = results[0]
+    if (!target) {
+      setMessageKey('message.noResults')
+      return
+    }
+    mapController.flyTo(target.lng, target.lat)
+    setMessageKey('message.moved', { label: preset.label })
+  } catch {
+    setMessageKey('message.searchFailed')
+  } finally {
+    presetSelect.value = ''
   }
 }
 
 async function generateMaze(): Promise<void> {
-  setMessage('Loading road network and rebuilding the maze on top of it...')
+  setMessageKey('message.loading')
   stopLoop()
   audio.setAmbience(false)
   try {
@@ -246,19 +383,20 @@ async function generateMaze(): Promise<void> {
     playableMap = generatePlayableMap(viewport, roadData, {
       pelletDensity: Number(pelletInput.value),
     })
+    mapController.fitToPoints(playableMap.nodes)
     engine = new GameEngine(playableMap)
     applySpeed()
     drawCurrentFrame()
     syncHud()
-    setMessage(`Generated a ${playableMap.sourceMode} road maze. Press Play.`)
+    setMessageKey('message.generated', { mode: modeLabel(currentLocale, playableMap.sourceMode).toLowerCase() })
   } catch {
-    setMessage('Maze generation failed. Try another area or zoom level.')
+    setMessageKey('message.generateFailed')
   }
 }
 
 async function play(): Promise<void> {
   if (!engine) {
-    setMessage('Generate a maze first.')
+    setMessageKey('message.generateFirst')
     return
   }
   await audio.unlock()
@@ -322,6 +460,14 @@ pauseButton.addEventListener('click', pause)
 restartButton.addEventListener('click', restart)
 speedInput.addEventListener('input', applySpeed)
 pelletInput.addEventListener('input', applyPelletDensity)
+presetSelect.addEventListener('change', () => {
+  void handlePresetSelect()
+})
+localeSelect.addEventListener('change', () => {
+  currentLocale = localeSelect.value === 'zh-TW' ? 'zh-TW' : 'en'
+  saveLocale(currentLocale)
+  renderLocale()
+})
 
 window.addEventListener('keydown', (event) => {
   const mapKey: Record<string, Direction> = {
@@ -353,10 +499,12 @@ window.addEventListener('resize', () => {
 })
 
 await mapController.ready()
+addressPresets = await loadAddressPresets()
 applySpeed()
 applyPelletDensity()
+renderLocale()
 mapController.onViewChange(() => {
   drawCurrentFrame()
 })
-setMessage('Map ready. Zoom to an area with roads, then generate a road-based maze.')
+setMessageKey('message.initial')
 syncHud()

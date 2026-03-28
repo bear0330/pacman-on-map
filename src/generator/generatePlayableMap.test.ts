@@ -88,10 +88,10 @@ describe('generatePlayableMap', () => {
     expect(minDistance).toBeGreaterThan(100)
   })
 
-  it('adds portal edges so boundary travel can wrap', () => {
+  it('does not inject artificial portal edges into the road graph', () => {
     const map = generatePlayableMap(viewport, { nodes: [], edges: [] })
     const portalEdges = map.edges.filter((edge) => edge.kind === 'portal')
-    expect(portalEdges.length).toBeGreaterThanOrEqual(4)
+    expect(portalEdges.length).toBe(0)
   })
 
   it('avoids placing pellets right on complex intersections', () => {

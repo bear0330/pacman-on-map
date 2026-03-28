@@ -79,7 +79,6 @@ export interface EntityState {
   currentNodeId: string | null
   lastNodeId: string | null
   travel: EntityTravel | null
-  wrapUntil: number
 }
 
 export interface GhostState {
@@ -92,7 +91,6 @@ export interface GhostState {
   lastNodeId: string | null
   travel: EntityTravel | null
   homeNodeId: string
-  wrapUntil: number
   recentNodeIds: string[]
 }
 
@@ -113,6 +111,13 @@ export interface SearchResult {
   label: string
   lat: number
   lng: number
+}
+
+export interface AddressPreset {
+  label: string
+  query?: string
+  lat?: number
+  lng?: number
 }
 
 export interface FloatingScore extends GeoPoint {

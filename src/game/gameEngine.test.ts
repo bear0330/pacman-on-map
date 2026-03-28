@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { GameEngine } from './gameEngine'
 import type { PlayableMap } from '../types'
 
-const portalMap: PlayableMap = {
+const roadMap: PlayableMap = {
   bounds: {
     north: 1,
     south: 0,
@@ -14,9 +14,9 @@ const portalMap: PlayableMap = {
     lat: 0.5,
   },
   nodes: [
-    { id: 'west', lng: 0.01, lat: 0.5, neighbors: ['mid', 'east'] },
+    { id: 'west', lng: 0.01, lat: 0.5, neighbors: ['mid'] },
     { id: 'mid', lng: 0.5, lat: 0.5, neighbors: ['west', 'east'] },
-    { id: 'east', lng: 0.99, lat: 0.5, neighbors: ['mid', 'west'] },
+    { id: 'east', lng: 0.99, lat: 0.5, neighbors: ['mid'] },
     { id: 'ghost-a', lng: 0.45, lat: 0.55, neighbors: ['mid'] },
     { id: 'ghost-b', lng: 0.55, lat: 0.55, neighbors: ['mid'] },
     { id: 'ghost-c', lng: 0.45, lat: 0.45, neighbors: ['mid'] },
@@ -25,7 +25,6 @@ const portalMap: PlayableMap = {
   edges: [
     { id: 'mid-west', from: 'mid', to: 'west', kind: 'road', length: 40 },
     { id: 'mid-east', from: 'mid', to: 'east', kind: 'road', length: 40 },
-    { id: 'portal-east-west', from: 'east', to: 'west', kind: 'portal', length: 1, synthetic: true },
     { id: 'ghost-a-mid', from: 'ghost-a', to: 'mid', kind: 'road', length: 20 },
     { id: 'ghost-b-mid', from: 'ghost-b', to: 'mid', kind: 'road', length: 20 },
     { id: 'ghost-c-mid', from: 'ghost-c', to: 'mid', kind: 'road', length: 20 },
@@ -46,40 +45,25 @@ describe('GameEngine portals', () => {
     anyEngine.resolveCollisions(timestamp, pacmanBefore, ghostsBefore)
   }
 
-  it('wraps to the opposite side when moving out at the boundary', () => {
-    const engine = new GameEngine(portalMap)
+  it('stops at the boundary when no road continues', () => {
+    const engine = new GameEngine(roadMap)
     engine.setSpeedMultiplier(1)
     engine.state.pacman.currentNodeId = 'east'
     engine.state.pacman.position = { lng: 0.99, lat: 0.5 }
     engine.setDirection('right')
     engine.start()
-    engine.tick(performance.now() + 100)
+    const now = performance.now() + 100
+    engine.tick(now)
+    engine.tick(now + 100)
 
-    expect(engine.state.pacman.position.lng).toBeGreaterThanOrEqual(0.01)
-    expect(engine.state.pacman.position.lng).toBeLessThan(0.5)
-    expect(engine.state.pacman.travel?.fromNodeId).toBe('west')
-  })
-
-  it('continues moving after wrap instead of flickering between two edges', () => {
-    const engine = new GameEngine(portalMap)
-    engine.setSpeedMultiplier(1)
-    engine.state.pacman.currentNodeId = 'east'
-    engine.state.pacman.position = { lng: 0.99, lat: 0.5 }
-    engine.setDirection('right')
-    engine.start()
-
-    const start = performance.now() + 100
-    engine.tick(start)
-    engine.tick(start + 100)
-
-    expect(engine.state.pacman.position.lng).toBeGreaterThan(0.01)
-    expect(engine.state.pacman.position.lng).toBeLessThan(0.99)
-    expect(engine.state.pacman.currentNodeId).not.toBe('east')
+    expect(engine.state.pacman.currentNodeId).toBe('east')
+    expect(engine.state.pacman.travel).toBeNull()
+    expect(engine.state.pacman.position.lng).toBeCloseTo(0.99, 3)
   })
 
   it('does not wrap on a bend when a normal road continues inside the viewport', () => {
     const bendMap: PlayableMap = {
-      ...portalMap,
+      ...roadMap,
       nodes: [
         { id: 'edge', lng: 0.965, lat: 0.8, neighbors: ['turn', 'inside'] },
         { id: 'turn', lng: 0.9, lat: 0.8, neighbors: ['edge'] },
@@ -107,7 +91,7 @@ describe('GameEngine portals', () => {
   })
 
   it('awards chained ghost scores and resets from 200 on the next power cycle', () => {
-    const engine = new GameEngine(portalMap)
+    const engine = new GameEngine(roadMap)
     ;(engine as any).spawnProtectedUntil = 0
 
     engine.state.pacman.position = { lng: 0.45, lat: 0.55 }
@@ -141,7 +125,7 @@ describe('GameEngine portals', () => {
   })
 
   it('enters a short dying state before respawn after a hit', () => {
-    const engine = new GameEngine(portalMap)
+    const engine = new GameEngine(roadMap)
     engine.state.status = 'playing'
     engine.state.pacman.position = { lng: 0.5, lat: 0.5 }
     engine.state.pacman.currentNodeId = 'mid'
@@ -161,7 +145,7 @@ describe('GameEngine portals', () => {
   })
 
   it('detects a collision when pacman and a ghost cross each other on the same straight road', () => {
-    const engine = new GameEngine(portalMap)
+    const engine = new GameEngine(roadMap)
     engine.state.status = 'playing'
     engine.state.remainingPellets = 1
     ;(engine as any).spawnProtectedUntil = 0

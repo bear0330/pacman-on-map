@@ -27,8 +27,8 @@ export class MapController {
     this.map = new maplibregl.Map({
       container,
       style: TILE_STYLE,
-      center: [121.4133805, 25.0233275],
-      zoom: 16,
+      center: [-73.9855, 40.758],
+      zoom: 15,
     })
 
     this.map.addControl(new maplibregl.NavigationControl({ visualizePitch: false }), 'top-right')
@@ -67,6 +67,68 @@ export class MapController {
       center: [lng, lat],
       zoom: 15,
       speed: 0.8,
+    })
+  }
+
+  public fitToPoints(points: GeoPoint[]): void {
+    if (points.length === 0) {
+      return
+    }
+
+    const canvas = this.map.getCanvas()
+    const width = canvas.clientWidth
+    const height = canvas.clientHeight
+    if (width <= 0 || height <= 0) {
+      return
+    }
+
+    const margin = 34
+    let minX = Number.POSITIVE_INFINITY
+    let maxX = Number.NEGATIVE_INFINITY
+    let minY = Number.POSITIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+
+    for (const point of points) {
+      const projected = this.map.project([point.lng, point.lat])
+      minX = Math.min(minX, projected.x)
+      maxX = Math.max(maxX, projected.x)
+      minY = Math.min(minY, projected.y)
+      maxY = Math.max(maxY, projected.y)
+    }
+
+    const fitsCurrentView = minX >= margin
+      && maxX <= width - margin
+      && minY >= margin
+      && maxY <= height - margin
+
+    if (fitsCurrentView) {
+      return
+    }
+
+    const availableWidth = Math.max(1, width - margin * 2)
+    const availableHeight = Math.max(1, height - margin * 2)
+    const bboxWidth = Math.max(1, maxX - minX)
+    const bboxHeight = Math.max(1, maxY - minY)
+    const scale = Math.max(bboxWidth / availableWidth, bboxHeight / availableHeight)
+    const bboxCenter = {
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+    }
+    const targetCenter = this.map.unproject([bboxCenter.x, bboxCenter.y])
+
+    if (scale <= 1) {
+      this.map.easeTo({
+        center: [targetCenter.lng, targetCenter.lat],
+        duration: 180,
+      })
+      return
+    }
+
+    const zoomDelta = Math.log2(scale) + 0.06
+    this.map.easeTo({
+      center: [targetCenter.lng, targetCenter.lat],
+      zoom: this.map.getZoom() - zoomDelta,
+      duration: 200,
     })
   }
 

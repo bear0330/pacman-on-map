@@ -11,8 +11,6 @@ const PELLET_STEP_METERS = 6
 const MIN_SPAWN_DISTANCE_METERS = 120
 const MIN_POWER_DISTANCE_FROM_SPAWN_METERS = 90
 const BLOCKED_EDGE_PROGRESS = 0.35
-const PORTAL_MARGIN_RATIO = 0.03
-const MAX_PORTALS_PER_SIDE = 6
 const INTERSECTION_CLEARANCE_METERS = 18
 const TURN_CLEARANCE_METERS = 5
 const TERMINAL_CLEARANCE_METERS = 2
@@ -161,111 +159,6 @@ function connectDeadEnds(roadData: RoadData): { roadData: RoadData; added: numbe
   }
 
   return { roadData: cloned, added }
-}
-
-function addPortalEdges(viewport: Viewport, roadData: RoadData): RoadData {
-  const cloned = cloneRoadData(roadData)
-  const nodeMap = new Map(cloned.nodes.map((node) => [node.id, node]))
-  const width = viewport.bounds.east - viewport.bounds.west
-  const height = viewport.bounds.north - viewport.bounds.south
-  const westThreshold = viewport.bounds.west + width * PORTAL_MARGIN_RATIO
-  const eastThreshold = viewport.bounds.east - width * PORTAL_MARGIN_RATIO
-  const southThreshold = viewport.bounds.south + height * PORTAL_MARGIN_RATIO
-  const northThreshold = viewport.bounds.north - height * PORTAL_MARGIN_RATIO
-
-  const boundaryNodes = (
-    predicate: (node: RoadGraphNode) => boolean,
-    sortMetric: (node: RoadGraphNode) => number,
-  ): RoadGraphNode[] => {
-    const edgeNodes = cloned.nodes.filter((node) => node.neighbors.length > 0 && predicate(node))
-    if (edgeNodes.length > 0) {
-      return edgeNodes
-    }
-    return [...cloned.nodes]
-      .filter((node) => node.neighbors.length > 0)
-      .sort((a, b) => sortMetric(a) - sortMetric(b))
-      .slice(0, MAX_PORTALS_PER_SIDE)
-  }
-
-  const westNodes = boundaryNodes(
-    (node) => node.lng <= westThreshold,
-    (node) => node.lng - viewport.bounds.west,
-  )
-  const eastNodes = boundaryNodes(
-    (node) => node.lng >= eastThreshold,
-    (node) => viewport.bounds.east - node.lng,
-  )
-  const northNodes = boundaryNodes(
-    (node) => node.lat >= northThreshold,
-    (node) => viewport.bounds.north - node.lat,
-  )
-  const southNodes = boundaryNodes(
-    (node) => node.lat <= southThreshold,
-    (node) => node.lat - viewport.bounds.south,
-  )
-
-  const maybeConnect = (from: RoadGraphNode | undefined, to: RoadGraphNode | undefined): void => {
-    if (!from || !to || from.id === to.id || from.neighbors.includes(to.id)) {
-      return
-    }
-    const edgeId = `portal:${from.id}:${to.id}`
-    if (cloned.edges.some((edge) => edge.id === edgeId || edge.id === `portal:${to.id}:${from.id}`)) {
-      return
-    }
-    cloned.edges.push({
-      id: edgeId,
-      from: from.id,
-      to: to.id,
-      kind: 'portal',
-      length: 1,
-      synthetic: true,
-    })
-    ensureNeighbor(nodeMap, from.id, to.id)
-  }
-
-  const pairSides = (
-    sources: RoadGraphNode[],
-    targets: RoadGraphNode[],
-    metric: (source: RoadGraphNode, target: RoadGraphNode) => number,
-    centerMetric: (node: RoadGraphNode) => number,
-  ): void => {
-    const pickedSources = [...sources]
-      .sort((a, b) => centerMetric(a) - centerMetric(b))
-      .slice(0, MAX_PORTALS_PER_SIDE)
-
-    for (const source of pickedSources) {
-      const bestTarget = [...targets]
-        .sort((a, b) => metric(source, a) - metric(source, b))[Math.floor(Math.random() * Math.min(3, targets.length))]
-      maybeConnect(source, bestTarget)
-    }
-  }
-
-  pairSides(
-    westNodes,
-    eastNodes,
-    (source, target) => Math.abs(source.lat - target.lat),
-    (node) => Math.abs(node.lat - viewport.center.lat),
-  )
-  pairSides(
-    eastNodes,
-    westNodes,
-    (source, target) => Math.abs(source.lat - target.lat),
-    (node) => Math.abs(node.lat - viewport.center.lat),
-  )
-  pairSides(
-    northNodes,
-    southNodes,
-    (source, target) => Math.abs(source.lng - target.lng),
-    (node) => Math.abs(node.lng - viewport.center.lng),
-  )
-  pairSides(
-    southNodes,
-    northNodes,
-    (source, target) => Math.abs(source.lng - target.lng),
-    (node) => Math.abs(node.lng - viewport.center.lng),
-  )
-
-  return cloned
 }
 
 function fallbackGrid(viewport: Viewport): RoadData {
@@ -435,10 +328,6 @@ function buildPellets(
     if (!from || !to) {
       continue
     }
-    if (edge.kind === 'portal') {
-      continue
-    }
-
     const fromClearance = pelletClearanceForEdgeEnd(from, to, nodeMap)
     const toClearance = pelletClearanceForEdgeEnd(to, from, nodeMap)
     if (edge.length <= fromClearance + toClearance) {
@@ -507,15 +396,15 @@ function prepareRoadNetwork(viewport: Viewport, roadData: RoadData): { roadData:
     if (component.nodes.length >= 4) {
       const hybrid = connectDeadEnds(component)
       if (hybrid.roadData.nodes.length >= 4 && hybrid.roadData.edges.length >= 6) {
-        return { roadData: addPortalEdges(viewport, hybrid.roadData), sourceMode: 'hybrid' }
+        return { roadData: hybrid.roadData, sourceMode: 'hybrid' }
       }
     }
-    return { roadData: addPortalEdges(viewport, fallbackGrid(viewport)), sourceMode: 'generated' }
+    return { roadData: fallbackGrid(viewport), sourceMode: 'generated' }
   }
 
   const hybrid = connectDeadEnds(component)
   return {
-    roadData: addPortalEdges(viewport, hybrid.roadData),
+    roadData: hybrid.roadData,
     sourceMode: hybrid.added > 0 ? 'hybrid' : 'road',
   }
 }

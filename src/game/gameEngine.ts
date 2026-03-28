@@ -9,8 +9,6 @@ const COLLISION_DISTANCE_METERS = 10
 const PELLET_COLLISION_DISTANCE_METERS = 7
 const SPAWN_PROTECTION_MS = 2_000
 const GHOST_RELEASE_DELAY_MS = 1_200
-const WRAP_RECOVERY_MS = 220
-const WRAP_MARGIN_RATIO = 0.025
 const FLOATING_SCORE_DURATION_MS = 1_200
 const EAT_GHOST_ANIMATION_MS = 450
 const DEATH_ANIMATION_MS = 1_050
@@ -115,7 +113,6 @@ function createEntity(node: RoadGraphNode, direction: Direction): EntityState {
     currentNodeId: node.id,
     lastNodeId: null,
     travel: null,
-    wrapUntil: 0,
   }
 }
 
@@ -189,7 +186,6 @@ export class GameEngine {
         lastNodeId: null,
         travel: null,
         homeNodeId: node.id,
-        wrapUntil: 0,
         recentNodeIds: [node.id],
       }
     })
@@ -205,26 +201,6 @@ export class GameEngine {
 
   private findEdge(fromId: string, toId: string): RoadGraphEdge | null {
     return this.edgeByNodes.get(`${fromId}:${toId}`) ?? null
-  }
-
-  private boundaryThresholds(): { west: number; east: number; south: number; north: number } {
-    const width = this.map.bounds.east - this.map.bounds.west
-    const height = this.map.bounds.north - this.map.bounds.south
-    return {
-      west: this.map.bounds.west + width * WRAP_MARGIN_RATIO,
-      east: this.map.bounds.east - width * WRAP_MARGIN_RATIO,
-      south: this.map.bounds.south + height * WRAP_MARGIN_RATIO,
-      north: this.map.bounds.north - height * WRAP_MARGIN_RATIO,
-    }
-  }
-
-  private continueFromNode(node: RoadGraphNode, direction: Direction, lastNodeId: string | null): string | null {
-    const candidates = this.availableNeighbors(node.id)
-      .filter((candidate) => this.findEdge(node.id, candidate.id)?.kind !== 'portal')
-    return chooseDirectionalNeighbor(node, candidates, direction)?.id
-      ?? candidates.find((candidate) => candidate.id !== lastNodeId)?.id
-      ?? candidates[0]?.id
-      ?? null
   }
 
   private buildScatterTargets(): string[] {
@@ -246,7 +222,7 @@ export class GameEngine {
 
     for (let step = 0; step < steps; step += 1) {
       const candidates = this.availableNeighbors(current.id)
-        .filter((candidate) => candidate.id !== previousId && this.findEdge(current.id, candidate.id)?.kind !== 'portal')
+        .filter((candidate) => candidate.id !== previousId)
       const next = chooseDirectionalNeighbor(current, candidates, direction)
         ?? candidates[0]
       if (!next) {
@@ -263,70 +239,6 @@ export class GameEngine {
     const target = this.requireNode(targetId)
     const recentPenalty = recentNodeIds.includes(candidate.id) ? 250 : 0
     return distanceMeters(candidate, target) + recentPenalty
-  }
-
-  private wrapTargetForDirection(node: RoadGraphNode, direction: Direction): RoadGraphNode | null {
-    const thresholds = this.boundaryThresholds()
-    const candidates = [...this.nodeMap.values()].filter((candidate) => candidate.neighbors.length > 0)
-    let oppositeSide: RoadGraphNode[] = []
-
-    if (direction === 'right' && node.lng >= thresholds.east) {
-      oppositeSide = candidates.filter((candidate) => candidate.lng <= thresholds.west)
-        .sort((a, b) => Math.abs(a.lat - node.lat) - Math.abs(b.lat - node.lat))
-    } else if (direction === 'left' && node.lng <= thresholds.west) {
-      oppositeSide = candidates.filter((candidate) => candidate.lng >= thresholds.east)
-        .sort((a, b) => Math.abs(a.lat - node.lat) - Math.abs(b.lat - node.lat))
-    } else if (direction === 'up' && node.lat >= thresholds.north) {
-      oppositeSide = candidates.filter((candidate) => candidate.lat <= thresholds.south)
-        .sort((a, b) => Math.abs(a.lng - node.lng) - Math.abs(b.lng - node.lng))
-    } else if (direction === 'down' && node.lat <= thresholds.south) {
-      oppositeSide = candidates.filter((candidate) => candidate.lat >= thresholds.north)
-        .sort((a, b) => Math.abs(a.lng - node.lng) - Math.abs(b.lng - node.lng))
-    }
-
-    if (oppositeSide.length === 0) {
-      return null
-    }
-
-    const ranked = oppositeSide
-      .map((candidate) => {
-        const forwardNeighborId = this.continueFromNode(candidate, direction, node.id)
-        return {
-          candidate,
-          forwardNeighborId,
-          score: direction === 'left' || direction === 'right'
-            ? Math.abs(candidate.lat - node.lat)
-            : Math.abs(candidate.lng - node.lng),
-        }
-      })
-      .sort((a, b) => {
-        const aForward = Boolean(a.forwardNeighborId)
-        const bForward = Boolean(b.forwardNeighborId)
-        if (aForward !== bForward) {
-          return aForward ? -1 : 1
-        }
-        return a.score - b.score
-      })
-
-    return ranked[0]?.candidate ?? oppositeSide[Math.floor(Math.random() * oppositeSide.length)] ?? null
-  }
-
-  private canWrapFromNode(node: RoadGraphNode, direction: Direction): boolean {
-    const thresholds = this.boundaryThresholds()
-    const nonPortalNeighbors = this.availableNeighbors(node.id)
-      .filter((candidate) => this.findEdge(node.id, candidate.id)?.kind !== 'portal')
-
-    const directRoad = chooseDirectionalNeighbor(node, nonPortalNeighbors, direction)
-    if (directRoad) {
-      return false
-    }
-
-    return (
-      (direction === 'right' && node.lng >= thresholds.east)
-      || (direction === 'left' && node.lng <= thresholds.west)
-      || (direction === 'up' && node.lat >= thresholds.north)
-      || (direction === 'down' && node.lat <= thresholds.south)
-    )
   }
 
   private snapshotEntity(entity: EntityState | GhostState): EntitySnapshot {
@@ -472,16 +384,6 @@ export class GameEngine {
     if (!edge) {
       return false
     }
-    if (edge.kind === 'portal') {
-      const currentNode = this.requireNode(entity.currentNodeId)
-      const targetNode = this.requireNode(nextNodeId)
-      entity.lastNodeId = entity.currentNodeId
-      entity.currentNodeId = nextNodeId
-      entity.travel = null
-      entity.position = cloneNodePosition(targetNode)
-      entity.direction = directionBetween(currentNode, targetNode)
-      return true
-    }
     entity.travel = {
       edgeId: edge.id,
       fromNodeId: entity.currentNodeId,
@@ -496,7 +398,7 @@ export class GameEngine {
     return true
   }
 
-  private choosePacmanEdge(timestamp: number): void {
+  private choosePacmanEdge(): void {
     const pacman = this.state.pacman
     if (!pacman.currentNodeId) {
       return
@@ -504,25 +406,6 @@ export class GameEngine {
 
     const node = this.requireNode(pacman.currentNodeId)
     const candidates = this.availableNeighbors(node.id)
-
-    if (timestamp >= pacman.wrapUntil) {
-      const wrapTarget = this.canWrapFromNode(node, pacman.pendingDirection)
-        ? this.wrapTargetForDirection(node, pacman.pendingDirection)
-        : null
-      if (wrapTarget) {
-        pacman.lastNodeId = pacman.currentNodeId
-        pacman.currentNodeId = wrapTarget.id
-        pacman.travel = null
-        pacman.position = cloneNodePosition(wrapTarget)
-        pacman.direction = pacman.pendingDirection
-        pacman.wrapUntil = timestamp + WRAP_RECOVERY_MS
-        const nextNodeId = this.continueFromNode(wrapTarget, pacman.pendingDirection, node.id)
-        if (nextNodeId) {
-          this.startTravel(pacman, nextNodeId)
-        }
-        return
-      }
-    }
 
     if (candidates.length === 0) {
       return
@@ -576,7 +459,7 @@ export class GameEngine {
     this.startTravel(ghost, nextNodeId)
   }
 
-  private moveTraveler(entity: EntityState | GhostState, distance: number, timestamp: number): void {
+  private moveTraveler(entity: EntityState | GhostState, distance: number): void {
     let remaining = distance
 
     while (remaining > 0) {
@@ -584,7 +467,7 @@ export class GameEngine {
         if ('id' in entity) {
           this.chooseGhostEdge(entity)
         } else {
-          this.choosePacmanEdge(timestamp)
+          this.choosePacmanEdge()
         }
         if (!entity.travel) {
           break
@@ -865,7 +748,7 @@ export class GameEngine {
       this.frightenedGhostChain = 0
     }
     const pacmanDistance = PACMAN_SPEED * this.speedMultiplier * (delta / 1000)
-    this.moveTraveler(this.state.pacman, pacmanDistance, timestamp)
+    this.moveTraveler(this.state.pacman, pacmanDistance)
     this.consumePellets()
 
     if (timestamp >= this.ghostsReleasedAt) {
@@ -876,7 +759,7 @@ export class GameEngine {
         const ghostSpeed = ghost.mode === 'eyes'
           ? EYES_SPEED
           : (ghost.mode === 'frightened' ? FRIGHTENED_SPEED : GHOST_SPEED)
-        this.moveTraveler(ghost, ghostSpeed * this.speedMultiplier * (delta / 1000), timestamp)
+        this.moveTraveler(ghost, ghostSpeed * this.speedMultiplier * (delta / 1000))
       }
     }
 
