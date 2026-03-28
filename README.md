@@ -9,7 +9,7 @@ This project turns real streets into a playable Pac-Man board. Pick a neighborho
 
 My son recently got into Pac-Man, spotted the old Google Maps version on YouTube, and asked me to find it for him. I found out it was a 2015 April Fools' thing and no longer playable, so I made this to give him something close enough to enjoy.
 
-This whole project was basically vibed into existence. I did not treat it like a serious production system. I am a senior engineer, but this one was mainly for fun, for my kid, and because the idea was too charming to ignore. It is not perfect, and I was not obsessing over every engineering detail. Still, it works, it made him happy, and that was the point.
+This whole project was largely vibe-coded with AI. I did not treat it like a serious production system. I am a senior engineer, but this one was mainly for fun, for my kid, and because the idea was too charming to ignore. It is not perfect, and I was not obsessing over every engineering detail. Still, it works, it made him happy, and that was the point.
 
 ## What It Does
 

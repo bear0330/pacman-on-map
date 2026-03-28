@@ -4,9 +4,13 @@
 # label|query
 # label|lat|lng
 
-Shibuya Crossing|Shibuya Crossing, Tokyo, Japan
-Asakusa Streets|Asakusa, Tokyo, Japan
+Shibuya Crossing, Tokyo|Shibuya Crossing, Tokyo, Japan
+Asakusa, Tokyo|Asakusa, Tokyo, Japan
 Le Marais, Paris|Le Marais, Paris, France
-Latin Quarter, Paris|Latin Quarter, Paris, France
-Times Square, New York|Times Square, Manhattan, New York, USA
+Montmartre, Paris|Montmartre, Paris, France
+Greenwich Village, New York|Greenwich Village, Manhattan, New York, USA
+Covent Garden, London|Covent Garden, London, UK
+Gothic Quarter, Barcelona|Barri Gotic, Barcelona, Spain
+Trastevere, Rome|Trastevere, Rome, Italy
+Ximending, Taipei|Ximending, Taipei, Taiwan
 Author's Hometown|台灣新北市新莊區迴龍 中正路
