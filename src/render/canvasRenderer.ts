@@ -1,10 +1,14 @@
 import type { GameEngine } from '../game/gameEngine'
-import type { BonusFruit, Direction, GeoPoint, PlayableMap, ScreenPoint, VisualEffect } from '../types'
+import type { BonusFruit, Direction, GeoPoint, GhostMode, PlayableMap, ScreenPoint, VisualEffect } from '../types'
 
 const PACMAN_GLOW_RADIUS = 30
 const PACMAN_BODY_RADIUS = 20
 const GHOST_HEAD_RADIUS = 16
 const GHOST_BODY_HEIGHT = 18
+const FRIGHTENED_GHOST_COLOR = '#6a4c93'
+const FRIGHTENED_GHOST_WARNING_COLOR = '#f8f9fa'
+const FRIGHTENED_WARNING_MS = 2_000
+const FRIGHTENED_FLASH_INTERVAL_MS = 160
 
 interface LayerCache {
   canvas: HTMLCanvasElement
@@ -32,6 +36,20 @@ function createLayerCanvas(): LayerCache {
     throw new Error('2D context is not available')
   }
   return { canvas, context, key: '' }
+}
+
+export function getGhostBodyColor(mode: GhostMode, color: string, frightenedUntil: number, now: number): string {
+  if (mode !== 'frightened') {
+    return color
+  }
+
+  const remaining = frightenedUntil - now
+  if (remaining > FRIGHTENED_WARNING_MS) {
+    return FRIGHTENED_GHOST_COLOR
+  }
+
+  const flashPhase = Math.floor(Math.max(0, remaining) / FRIGHTENED_FLASH_INTERVAL_MS) % 2
+  return flashPhase === 0 ? FRIGHTENED_GHOST_WARNING_COLOR : FRIGHTENED_GHOST_COLOR
 }
 
 export class CanvasRenderer {
@@ -139,6 +157,7 @@ export class CanvasRenderer {
   }
 
   public renderGame(engine: GameEngine, project: (point: GeoPoint) => ScreenPoint): void {
+    const now = performance.now()
     const { ratio, width, height } = this.resize()
     const pellets = engine.getPellets()
     this.ensureRoadLayer(engine.map, project, ratio, width, height)
@@ -155,7 +174,7 @@ export class CanvasRenderer {
       this.drawGhost(
         ghost.position,
         ghost.direction,
-        ghost.mode === 'frightened' ? '#6a4c93' : ghost.color,
+        getGhostBodyColor(ghost.mode, ghost.color, engine.state.frightenedUntil, now),
         ghost.mode,
         project,
       )

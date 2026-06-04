@@ -15,7 +15,7 @@ const EAT_GHOST_PAUSE_MS = 120
 const DEATH_ANIMATION_MS = 1_050
 const FRUIT_VISIBLE_MS = 9_000
 const FRUIT_COLLISION_DISTANCE_METERS = 12
-const EXTRA_LIFE_SCORE = 10_000
+const EXTRA_LIFE_SCORE_INTERVAL = 5_000
 const FRUIT_TRIGGER_PROGRESS = [0.29, 0.7]
 const GHOST_MEMORY_SIZE = 6
 const GHOST_COLORS = ['#ff595e', '#00bbf9', '#ffca3a', '#90be6d']
@@ -161,7 +161,7 @@ export class GameEngine {
   private pendingGameover = false
   private totalPelletsAtLevelStart = 0
   private fruitTriggerIndex = 0
-  private extraLifeAwarded = false
+  private extraLivesAwarded = 0
 
   public constructor(map: PlayableMap) {
     this.map = map
@@ -306,7 +306,7 @@ export class GameEngine {
     this.pendingGameover = false
     this.totalPelletsAtLevelStart = this.pellets.size
     this.fruitTriggerIndex = 0
-    this.extraLifeAwarded = false
+    this.extraLivesAwarded = 0
   }
 
   public setDirection(direction: Direction): void {
@@ -721,12 +721,16 @@ export class GameEngine {
   }
 
   private awardExtraLifeIfEligible(): void {
-    if (this.extraLifeAwarded || this.state.score < EXTRA_LIFE_SCORE) {
+    const eligibleExtraLives = Math.floor(this.state.score / EXTRA_LIFE_SCORE_INTERVAL)
+    const extraLivesToAward = eligibleExtraLives - this.extraLivesAwarded
+    if (extraLivesToAward <= 0) {
       return
     }
-    this.extraLifeAwarded = true
-    this.state.lives += 1
-    this.pushEvent('extra-life')
+    this.extraLivesAwarded = eligibleExtraLives
+    this.state.lives += extraLivesToAward
+    for (let count = 0; count < extraLivesToAward; count += 1) {
+      this.pushEvent('extra-life')
+    }
   }
 
   private chooseFruitSpawnNode(): RoadGraphNode | null {

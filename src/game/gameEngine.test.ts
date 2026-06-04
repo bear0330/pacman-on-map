@@ -267,17 +267,23 @@ describe('GameEngine portals', () => {
     expect(engine.state.bonusFruit).not.toBeNull()
   })
 
-  it('awards one extra life when the score reaches 10000', () => {
+  it('awards an extra life for each 5000-point milestone', () => {
     const engine = new GameEngine(roadMap)
     const anyEngine = engine as any
-    engine.state.score = 10_050
+    engine.state.score = 15_050
     engine.state.lives = 3
 
     anyEngine.awardExtraLifeIfEligible()
-    expect(engine.state.lives).toBe(4)
+    expect(engine.state.lives).toBe(6)
+    expect(engine.drainEvents().filter((event) => event.type === 'extra-life')).toHaveLength(3)
 
     anyEngine.awardExtraLifeIfEligible()
-    expect(engine.state.lives).toBe(4)
+    expect(engine.state.lives).toBe(6)
+
+    engine.state.score = 20_000
+    anyEngine.awardExtraLifeIfEligible()
+    expect(engine.state.lives).toBe(7)
+    expect(engine.drainEvents().filter((event) => event.type === 'extra-life')).toHaveLength(1)
   })
 
   it('turns eyes back into a normal ghost after reaching home', () => {
