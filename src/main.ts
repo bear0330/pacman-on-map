@@ -584,6 +584,8 @@ localeSelect.addEventListener('change', () => {
 })
 
 window.addEventListener('keydown', (event) => {
+  if (document.querySelector("input:focus") !== null) return
+
   const mapKey: Record<string, Direction> = {
     ArrowUp: 'up',
     ArrowDown: 'down',
